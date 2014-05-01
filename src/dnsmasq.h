@@ -622,6 +622,7 @@ struct frec {
 #define LEASE_NA            32  /* IPv6 no-temporary lease */
 #define LEASE_TA            64  /* IPv6 temporary lease */
 #define LEASE_HAVE_HWADDR  128  /* Have set hwaddress */
+#define LEASE_PD           256  /* Prefix delegation */
 
 struct dhcp_lease {
   int clid_len;          /* length of client identifier */
@@ -641,6 +642,10 @@ struct dhcp_lease {
   int last_interface;
 #ifdef HAVE_DHCP6
   struct in6_addr addr6;
+  int prefix_len; /* for PD only */
+#ifdef HAVE_PD
+  struct in6_addr client_addr;
+#endif
   int iaid;
   struct slaac_address {
     struct in6_addr addr;
@@ -837,7 +842,7 @@ struct dhcp_context {
 #define CONTEXT_USED           (1u<<15)
 #define CONTEXT_OLD            (1u<<16)
 #define CONTEXT_V6             (1u<<17)
-
+#define CONTEXT_PREFIX         (1u<<18) 
 
 struct ping_result {
   struct in_addr addr;
@@ -926,7 +931,7 @@ extern struct daemon {
   int port, query_port, min_port;
   unsigned long local_ttl, neg_ttl, max_ttl, max_cache_ttl, auth_ttl;
   struct hostsfile *addn_hosts;
-  struct dhcp_context *dhcp, *dhcp6;
+  struct dhcp_context *dhcp, *dhcp6, *prefix_contexts;
   struct ra_interface *ra_interfaces;
   struct dhcp_config *dhcp_conf;
   struct dhcp_opt *dhcp_opts, *dhcp_match, *dhcp_opts6, *dhcp_match6;
@@ -1244,7 +1249,7 @@ void lease_update_dns(int force);
 void lease_init(time_t now);
 struct dhcp_lease *lease4_allocate(struct in_addr addr);
 #ifdef HAVE_DHCP6
-struct dhcp_lease *lease6_allocate(struct in6_addr *addrp, int lease_type);
+struct dhcp_lease *lease6_allocate(struct in6_addr *addrp, int prefix_len, int lease_type);
 struct dhcp_lease *lease6_find(unsigned char *clid, int clid_len, 
 			       int lease_type, int iaid, struct in6_addr *addr);
 void lease6_reset(void);
@@ -1273,6 +1278,9 @@ void lease_find_interfaces(time_t now);
 #ifdef HAVE_SCRIPT
 void lease_add_extradata(struct dhcp_lease *lease, unsigned char *data, 
 			 unsigned int len, int delim);
+#endif
+#ifdef HAVE_PD
+struct dhcp_lease *lease6_find_by_prefix(struct in6_addr *addr, int prefix_len);
 #endif
 #endif
 
@@ -1374,6 +1382,10 @@ void make_duid(time_t now);
 void dhcp_construct_contexts(time_t now);
 void get_client_mac(struct in6_addr *client, int iface, unsigned char *mac, 
 		    unsigned int *maclenp, unsigned int *mactypep);
+#ifdef HAVE_PD
+struct dhcp_context *find_prefix_context(struct dhcp_netid *tags, struct in6_addr *addr, int prefix_len);
+#endif
+
 #endif
   
 /* rfc3315.c */
@@ -1418,6 +1430,10 @@ void display_opts6(void);
 #  endif
 void log_context(int family, struct dhcp_context *context);
 void log_relay(int family, struct dhcp_relay *relay);
+#ifdef HAVE_PD
+void log_prefix(struct dhcp_context *context);
+#endif
+
 #endif
 
 /* outpacket.c */

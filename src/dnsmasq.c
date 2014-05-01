@@ -104,14 +104,6 @@ int main (int argc, char **argv)
     }
 #endif
 
-#ifdef HAVE_DHCP
-  if (!daemon->lease_file)
-    {
-      if (daemon->dhcp || daemon->dhcp6)
-	daemon->lease_file = LEASEFILE;
-    }
-#endif
-  
   /* Close any file descriptors we inherited apart from std{in|out|err} 
      
      Ensure that at least stdin, stdout and stderr (fd 0, 1, 2) exist,
@@ -198,6 +190,12 @@ int main (int argc, char **argv)
 #endif
   
 #ifdef HAVE_DHCP6
+
+#ifdef HAVE_PD
+  if (daemon->prefix_contexts)
+    daemon->doing_dhcp6 = 1;
+#endif
+
   if (daemon->dhcp6)
     {
       daemon->doing_ra = option_bool(OPT_RA);
@@ -217,6 +215,12 @@ int main (int argc, char **argv)
 #endif
   
 #ifdef HAVE_DHCP
+  if (!daemon->lease_file)
+    {
+      if (daemon->dhcp || daemon->doing_dhcp6)
+	daemon->lease_file = LEASEFILE;
+    }
+   
   /* Note that order matters here, we must call lease_init before
      creating any file descriptors which shouldn't be leaked
      to the lease-script init process. We need to call common_init
@@ -332,7 +336,7 @@ int main (int argc, char **argv)
 
 #if defined(HAVE_SCRIPT)
   /* Note getpwnam returns static storage */
-  if ((daemon->dhcp || daemon->dhcp6) && 
+  if ((daemon->dhcp || daemon->doing_dhcp6) && 
       daemon->scriptuser && 
       (daemon->lease_change_command || daemon->luascript))
     {
@@ -518,7 +522,7 @@ int main (int argc, char **argv)
    /* if we are to run scripts, we need to fork a helper before dropping root. */
   daemon->helperfd = -1;
 #ifdef HAVE_SCRIPT 
-  if ((daemon->dhcp || daemon->dhcp6) && (daemon->lease_change_command || daemon->luascript))
+  if ((daemon->dhcp || daemon->doing_dhcp6) && (daemon->lease_change_command || daemon->luascript))
     daemon->helperfd = create_helper(pipewrite, err_pipe[1], script_uid, script_gid, max_fd);
 #endif
 
@@ -714,6 +718,11 @@ int main (int argc, char **argv)
 #  ifdef HAVE_DHCP6
   for (context = daemon->dhcp6; context; context = context->next)
     log_context(AF_INET6, context);
+
+#ifdef HAVE_PD
+  for (context = daemon->prefix_contexts; context; context = context->next)
+    log_prefix(context);
+#endif
 
   for (relay = daemon->relay6; relay; relay = relay->next)
     log_relay(AF_INET6, relay);

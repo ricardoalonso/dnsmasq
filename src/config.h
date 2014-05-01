@@ -137,6 +137,7 @@ RESOLVFILE
 
 #define HAVE_DHCP
 #define HAVE_DHCP6 
+#define HAVE_PD
 #define HAVE_TFTP
 #define HAVE_SCRIPT
 #define HAVE_AUTH
@@ -311,6 +312,10 @@ HAVE_SOCKADDR_SA_LEN
 #undef HAVE_DHCP6
 #endif
 
+#if defined(NO_PD) || !defined(HAVE_DHCP6)
+#undef HAVE_PD
+#endif
+
 /* DHCP6 needs DHCP too */
 #ifdef HAVE_DHCP6
 #define HAVE_DHCP
@@ -375,6 +380,10 @@ static char *compile_opts =
      "no-"
 #  endif  
      "DHCPv6 "
+#  if !defined (HAVE_PD)
+     "no-"
+#  endif  
+     "DHCPv6-PD "
 #  if !defined(HAVE_SCRIPT)
      "no-scripts "
 #  else

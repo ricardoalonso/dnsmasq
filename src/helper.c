@@ -69,6 +69,10 @@ struct script_data
 #endif
 #ifdef HAVE_DHCP6
   int iaid, vendorclass_count;
+#ifdef HAVE_PD
+  int prefix_len; 
+  struct in6_addr client_addr;
+#endif
 #endif
   unsigned char hwaddr[DHCP_CHADDR_MAX];
   char interface[IF_NAMESIZE];
@@ -206,22 +210,37 @@ int create_helper(int event_fd, int err_fd, uid_t uid, gid_t gid, long max_fd)
 	  _exit(0);
 	}
  
-      is6 = !!(data.flags & (LEASE_TA | LEASE_NA));
+      is6 = !!(data.flags & (LEASE_TA | LEASE_NA | LEASE_PD));
       
-      if (data.action == ACTION_DEL)
-	action_str = "del";
-      else if (data.action == ACTION_ADD)
-	action_str = "add";
-      else if (data.action == ACTION_OLD || data.action == ACTION_OLD_HOSTNAME)
-	action_str = "old";
-      else if (data.action == ACTION_TFTP)
+#ifdef HAVE_PD
+      if (data.flags & LEASE_PD)
 	{
-	  action_str = "tftp";
-	  is6 = (data.flags != AF_INET);
+	  if (data.action == ACTION_DEL)
+	    action_str = "del-prefix";
+	  else if (data.action == ACTION_ADD)
+	    action_str = "add-prefix";
+	  else if (data.action == ACTION_OLD || data.action == ACTION_OLD_HOSTNAME)
+	    action_str = "old-prefix"; 
+	  else
+	    continue;
 	}
       else
-	continue;
-
+#endif
+	{
+	  if (data.action == ACTION_DEL)
+	    action_str = "del";
+	  else if (data.action == ACTION_ADD)
+	    action_str = "add";
+	  else if (data.action == ACTION_OLD || data.action == ACTION_OLD_HOSTNAME)
+	    action_str = "old";
+	  else if (data.action == ACTION_TFTP)
+	    {
+	      action_str = "tftp";
+	      is6 = (data.flags != AF_INET);
+	    }
+	  else
+	    continue;
+	}
       	
       /* stringify MAC into dhcp_buff */
       p = daemon->dhcp_buff;
@@ -375,14 +394,27 @@ int create_helper(int event_fd, int err_fd, uid_t uid, gid_t gid, long max_fd)
 	      if (!is6)
 		buf = grab_extradata_lua(buf, end, "vendor_class");
 #ifdef HAVE_DHCP6
-	      else  if (data.vendorclass_count != 0)
+	      else  
 		{
-		  sprintf(daemon->dhcp_buff2, "vendor_class_id");
-		  buf = grab_extradata_lua(buf, end, daemon->dhcp_buff2);
-		  for (i = 0; i < data.vendorclass_count - 1; i++)
+#ifdef HAVE_PD
+		  if (data.flags & LEASE_PD)
 		    {
-		      sprintf(daemon->dhcp_buff2, "vendor_class%i", i);
+		      inet_ntop(AF_INET6, &data.client_addr, daemon->dhcp_buff2, ADDRSTRLEN);
+		      lua_pushstring(lua, daemon->dhcp_buff2);
+		      lua_setfield(lua, -2, "client_address");
+		      lua_pushnumber(lua, data.prefix_len);
+		      lua_setfield(lua, -2, "prefix_length");
+		    }
+#endif
+		  if (data.vendorclass_count != 0)
+		    {
+		      sprintf(daemon->dhcp_buff2, "vendor_class_id");
 		      buf = grab_extradata_lua(buf, end, daemon->dhcp_buff2);
+		      for (i = 0; i < data.vendorclass_count - 1; i++)
+			{
+			  sprintf(daemon->dhcp_buff2, "vendor_class%i", i);
+			  buf = grab_extradata_lua(buf, end, daemon->dhcp_buff2);
+			}
 		    }
 		}
 #endif
@@ -498,7 +530,17 @@ int create_helper(int event_fd, int err_fd, uid_t uid, gid_t gid, long max_fd)
 #endif
 	  
 	  my_setenv("DNSMASQ_DOMAIN", domain, &err);
-	  
+	  	
+#ifdef HAVE_PD
+	  if (is6 && (data.flags & LEASE_PD))
+	     {
+	       inet_ntop(AF_INET6, &data.client_addr, daemon->dhcp_buff2, ADDRSTRLEN);
+	       my_setenv("DNSMASQ_CLIENT_ADDRESS", daemon->dhcp_buff2, &err);
+	       sprintf(daemon->dhcp_buff2, "%u", data.prefix_len);
+	       my_setenv("DNSMASQ_PREFIX_LENGTH", daemon->dhcp_buff2, &err); 
+	     }
+#endif
+
 	  end = extradata + data.ed_len;
 	  buf = extradata;
 	  
@@ -687,6 +729,10 @@ void queue_script(int action, struct dhcp_lease *lease, char *hostname, time_t n
   buf->vendorclass_count = lease->vendorclass_count;
   buf->addr6 = lease->addr6;
   buf->iaid = lease->iaid;
+#ifdef HAVE_PD
+  buf->prefix_len = lease->prefix_len;
+  buf->client_addr = lease->client_addr;
+#endif
 #endif
   buf->hwaddr_len = lease->hwaddr_len;
   buf->hwaddr_type = lease->hwaddr_type;

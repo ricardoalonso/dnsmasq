@@ -774,6 +774,21 @@ void dhcp_construct_contexts(time_t now)
     }
 }
 
+#ifdef HAVE_PD
+struct dhcp_context *find_prefix_context(struct dhcp_netid *tags, struct in6_addr *addr, int prefix_len)
+{
+   struct dhcp_context *tmp;
+ 
+  for (tmp = daemon->prefix_contexts; tmp; tmp = tmp->current)
+   if (prefix_len == tmp->prefix && 
+       IN6_ARE_ADDR_EQUAL(&tmp->start6, addr) &&
+       match_netid(tmp->filter, tags, 1))
+     return tmp;
+  
+  return NULL;
+}
+#endif
+
 #endif
 
 

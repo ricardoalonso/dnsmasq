@@ -828,7 +828,10 @@ can be combined  with
 .B ra-stateless
 and
 .B slaac.
-
+.TP
+.B \-F, --dhcp-prefix=[tag:<tag>[,tag:<tag>],]<IPv6addr>,<prefix-len>[,<lease time>]
+Enable the DHCP server and define a prefix for DHCPv6 prefix-delegation. Dnsmasq must be compiled with
+support for DHCPv6-PD. The tag system may be used to define prefixes for individual hosts or classes of hosts.
 .TP
 .B \-G, --dhcp-host=[<hwaddr>][,id:<client_id>|*][,set:<tag>][,<ipaddr>][,<hostname>][,<lease_time>][,ignore]
 Specify per host parameters for the DHCP server. This allows a machine
@@ -1372,6 +1375,8 @@ if known. "add" means a lease has been created, "del" means it has
 been destroyed, "old" is a notification of an existing lease when
 dnsmasq starts or a change to MAC address or hostname of an existing
 lease (also, lease length or expiry and client-id, if leasefile-ro is set).
+These arguments have are changed to "add-prefix", "old-prefix" etc when the lease is 
+for a prefix delegation.
 If the MAC address is from a network type other than ethernet,
 it will have the network type prepended, eg "06-01:23:45:67:89:ab" for
 token ring. The process is run as root (assuming that dnsmasq was originally run as
@@ -1438,6 +1443,13 @@ DNSMASQ_IAID containing the IAID for the lease. If the lease is a
 temporary allocation, this is prefixed to 'T'.
 
 DNSMASQ_MAC containing the MAC address of the client, if known.
+
+For DHCPv6-PD only
+
+DNSMASQ_CLIENT_ADDRESS contains the link-local address of the client which has
+been leased the prefix
+
+DNSMASQ_PREFIX_LENGTH contains the prefix length of the leased prefix.
 
 Note that the supplied hostname, vendorclass and userclass data is
 only  supplied for

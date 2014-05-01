@@ -26,8 +26,11 @@ void lease_init(time_t now)
   unsigned long ei;
   struct all_addr addr;
   struct dhcp_lease *lease;
-  int clid_len, hw_len, hw_type;
+  int clid_len, hw_len, hw_type, prefix_len = 0;
   FILE *leasestream;
+  char *cp;
+  
+  (void)cp;
   
   leases_left = daemon->dhcp_max;
   
@@ -50,7 +53,6 @@ void lease_init(time_t now)
           file_dirty = dns_dirty = 0;
           return;
         }
-
     }
   else
     {
@@ -89,6 +91,14 @@ void lease_init(time_t now)
 	if (strcmp(daemon->packet, "*") != 0)
 	  clid_len = parse_hex(daemon->packet, (unsigned char *)daemon->packet, 255, NULL, NULL);
 	
+#ifdef HAVE_PD
+	if ((cp = strchr(daemon->namebuff, '/')))
+	  {
+	    *cp = 0;
+	    prefix_len =  atoi(cp+1);
+	  }
+#endif
+
 	if (inet_pton(AF_INET, daemon->namebuff, &addr.addr.addr4) &&
 	    (lease = lease4_allocate(addr.addr.addr4)))
 	  {
@@ -115,15 +125,27 @@ void lease_init(time_t now)
 		lease_type = LEASE_TA;
 		s++;
 	      }
+#ifdef HAVE_PD
+	    else if (s[0] == 'P')
+	      {
+		lease_type = LEASE_PD;
+		s++;
+	      }
+#endif
 	    
 	    iaid = strtoul(s, NULL, 10);
 	    
-	    if ((lease = lease6_allocate(&addr.addr.addr6, lease_type)))
+	    if ((lease = lease6_allocate(&addr.addr.addr6, prefix_len, lease_type)))
 	      {
 		lease_set_hwaddr(lease, NULL, (unsigned char *)daemon->packet, 0, 0, clid_len, now, 0);
 		lease_set_iaid(lease, iaid);
-		if (strcmp(daemon->dhcp_buff, "*") !=  0)
-		  lease_set_hostname(lease, daemon->dhcp_buff, 0, get_domain6((struct in6_addr *)lease->hwaddr), NULL);
+#ifdef HAVE_PD
+		if (lease_type == LEASE_PD)
+		  inet_pton(AF_INET6, daemon->dhcp_buff, &lease->client_addr);
+		else
+#endif
+		  if (strcmp(daemon->dhcp_buff, "*") !=  0)
+		    lease_set_hostname(lease, daemon->dhcp_buff, 0, get_domain6((struct in6_addr *)lease->hwaddr), NULL);
 	      }
 	  }
 #endif
@@ -188,7 +210,7 @@ void lease_update_from_configs(void)
   char *name;
   
   for (lease = leases; lease; lease = lease->next)
-    if (lease->flags & (LEASE_TA | LEASE_NA))
+    if (lease->flags & (LEASE_TA | LEASE_NA | LEASE_PD))
       continue;
     else if ((config = find_config(daemon->dhcp_conf, NULL, lease->clid, lease->clid_len, 
 				   lease->hwaddr, lease->hwaddr_len, lease->hwaddr_type, NULL)) && 
@@ -226,7 +248,7 @@ void lease_update_file(time_t now)
 	{
 
 #ifdef HAVE_DHCP6
-	  if (lease->flags & (LEASE_TA | LEASE_NA))
+	  if (lease->flags & (LEASE_TA | LEASE_NA | LEASE_PD))
 	    continue;
 #endif
 
@@ -271,7 +293,7 @@ void lease_update_file(time_t now)
 	  for (lease = leases; lease; lease = lease->next)
 	    {
 	      
-	      if (!(lease->flags & (LEASE_TA | LEASE_NA)))
+	      if (!(lease->flags & (LEASE_TA | LEASE_NA | LEASE_PD)))
 		continue;
 
 #ifdef HAVE_BROKEN_RTC
@@ -282,10 +304,21 @@ void lease_update_file(time_t now)
     
 	      inet_ntop(AF_INET6, &lease->addr6, daemon->addrbuff, ADDRSTRLEN);
 	 
-	      ourprintf(&err, "%s%u %s ", (lease->flags & LEASE_TA) ? "T" : "",
-			lease->iaid, daemon->addrbuff);
-	      ourprintf(&err, "%s ", lease->hostname ? lease->hostname : "*");
-	      
+#ifdef HAVE_PD
+	      if (lease->flags & LEASE_PD)
+		{
+		  ourprintf(&err, "P%u %s/%d ", lease->iaid, daemon->addrbuff, lease->prefix_len);
+		  inet_ntop(AF_INET6, &lease->client_addr, daemon->addrbuff, ADDRSTRLEN);
+		  ourprintf(&err, "%s ", daemon->addrbuff);
+		}
+	      else
+#endif
+		{
+		  ourprintf(&err, "%s%u %s ", (lease->flags & LEASE_TA) ? "T" : "",
+			    lease->iaid, daemon->addrbuff);
+		  ourprintf(&err, "%s ", lease->hostname ? lease->hostname : "*");
+		}
+
 	      if (lease->clid && lease->clid_len != 0)
 		{
 		  for (i = 0; i < lease->clid_len - 1; i++)
@@ -358,7 +391,7 @@ static int find_interface_v4(struct in_addr local, int if_index, char *label,
   (void) vparam;
 
   for (lease = leases; lease; lease = lease->next)
-    if (!(lease->flags & (LEASE_TA | LEASE_NA)))
+    if (!(lease->flags & (LEASE_TA | LEASE_NA | LEASE_PD)))
       if (is_same_net(local, lease->addr, netmask))
 	lease_set_interface(lease, if_index, *((time_t *)vparam));
   
@@ -451,7 +484,12 @@ void lease_update_dns(int force)
       for (lease = leases; lease; lease = lease->next)
 	{
 	  int prot = AF_INET;
-	  
+
+#ifdef HAVE_PD
+	  if (lease->flags & LEASE_PD)
+	    continue;
+#endif
+
 #ifdef HAVE_DHCP6
 	  if (lease->flags & (LEASE_TA | LEASE_NA))
 	    prot = AF_INET6;
@@ -529,7 +567,7 @@ struct dhcp_lease *lease_find_by_client(unsigned char *hwaddr, int hw_len, int h
     for (lease = leases; lease; lease = lease->next)
       {
 #ifdef HAVE_DHCP6
-	if (lease->flags & (LEASE_TA | LEASE_NA))
+	if (lease->flags & (LEASE_TA | LEASE_NA | LEASE_PD))
 	  continue;
 #endif
 	if (lease->clid && clid_len == lease->clid_len &&
@@ -540,7 +578,7 @@ struct dhcp_lease *lease_find_by_client(unsigned char *hwaddr, int hw_len, int h
   for (lease = leases; lease; lease = lease->next)	
     {
 #ifdef HAVE_DHCP6
-      if (lease->flags & (LEASE_TA | LEASE_NA))
+      if (lease->flags & (LEASE_TA | LEASE_NA | LEASE_PD))
 	continue;
 #endif   
       if ((!lease->clid || !clid) && 
@@ -561,7 +599,7 @@ struct dhcp_lease *lease_find_by_addr(struct in_addr addr)
   for (lease = leases; lease; lease = lease->next)
     {
 #ifdef HAVE_DHCP6
-      if (lease->flags & (LEASE_TA | LEASE_NA))
+      if (lease->flags & (LEASE_TA | LEASE_NA | LEASE_PD))
 	continue;
 #endif  
       if (lease->addr.s_addr == addr.s_addr)
@@ -650,6 +688,25 @@ struct dhcp_lease *lease6_find_by_addr(struct in6_addr *net, int prefix, u64 add
   return NULL;
 } 
 
+#ifdef HAVE_PD
+struct dhcp_lease *lease6_find_by_prefix(struct in6_addr *addr, int prefix_len)
+{
+  struct dhcp_lease *lease;
+    
+  for (lease = leases; lease; lease = lease->next)
+    {
+      if (!(lease->flags & LEASE_PD))
+	continue;
+      
+      if (prefix_len == lease->prefix_len && 
+	  IN6_ARE_ADDR_EQUAL(&lease->addr6, addr))
+	return lease;
+    }
+  
+  return NULL;
+}
+#endif
+
 /* Find largest assigned address in context */
 u64 lease_find_max_addr6(struct dhcp_context *context)
 {
@@ -728,13 +785,14 @@ struct dhcp_lease *lease4_allocate(struct in_addr addr)
 }
 
 #ifdef HAVE_DHCP6
-struct dhcp_lease *lease6_allocate(struct in6_addr *addrp, int lease_type)
+struct dhcp_lease *lease6_allocate(struct in6_addr *addrp, int prefix_len, int lease_type)
 {
   struct dhcp_lease *lease = lease_allocate();
 
   if (lease)
     {
       lease->addr6 = *addrp;
+      lease->prefix_len = prefix_len;
       lease->flags |= lease_type;
       lease->iaid = 0;
     }
@@ -919,6 +977,11 @@ void lease_set_hostname(struct dhcp_lease *lease, char *name, int auth, char *do
       /* Depending on mode, we check either unqualified name or FQDN. */
       for (lease_tmp = leases; lease_tmp; lease_tmp = lease_tmp->next)
 	{
+#ifdef HAVE_PD
+	  if (lease->flags & LEASE_PD)
+	    continue;
+#endif
+
 	  if (option_bool(OPT_DHCP_FQDN))
 	    {
 	      if (!new_fqdn || !lease_tmp->fqdn || !hostname_isequal(lease_tmp->fqdn, new_fqdn))

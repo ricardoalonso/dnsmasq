@@ -146,6 +146,7 @@ struct myoption {
 #define LOPT_DNSSEC_CHECK  334
 #define LOPT_LOCAL_SERVICE 335
 #define LOPT_DNSSEC_TIME   336
+#define LOPT_DHCP_PREFIX   337
 
 #ifdef HAVE_GETOPT_LONG
 static const struct option opts[] =  
@@ -297,6 +298,7 @@ static const struct myoption opts[] =
     { "quiet-dhcp", 0, 0, LOPT_QUIET_DHCP },
     { "quiet-dhcp6", 0, 0, LOPT_QUIET_DHCP6 },
     { "quiet-ra", 0, 0, LOPT_QUIET_RA },
+    { "dhcp-prefix", 1, 0, LOPT_DHCP_PREFIX },
     { NULL, 0, 0, 0 }
   };
 
@@ -325,6 +327,7 @@ static struct {
   { 'E', OPT_EXPAND, NULL, gettext_noop("Expand simple names in /etc/hosts with domain-suffix."), NULL },
   { 'f', OPT_FILTER, NULL, gettext_noop("Don't forward spurious DNS requests from Windows hosts."), NULL },
   { 'F', ARG_DUP, "<ipaddr>,...", gettext_noop("Enable DHCP in the range given with lease duration."), NULL },
+  { LOPT_DHCP_PREFIX, ARG_DUP, "<ipaddr>,...", gettext_noop("Enable DHCP-PD for given prefix with lease duration."), NULL },
   { 'g', ARG_ONE, "<groupname>", gettext_noop("Change to this group after startup (defaults to %s)."), CHGRP },
   { 'G', ARG_DUP, "<hostspec>", gettext_noop("Set address or hostname for a specified machine."), NULL },
   { LOPT_DHCP_HOST, ARG_DUP, "<path>", gettext_noop("Read DHCP host specs from file."), NULL },
@@ -2476,6 +2479,9 @@ static int one_opt(int option, char *arg, char *errstr, char *gen_err, int comma
 
 #ifdef HAVE_DHCP
     case 'F':  /* --dhcp-range */
+#ifdef HAVE_PD
+    case LOPT_DHCP_PREFIX: /* --dhcp-prefix */
+#endif
       {
 	int k, leasepos = 2;
 	char *cp, *a[8] = { NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL };
@@ -2536,6 +2542,8 @@ static int one_opt(int option, char *arg, char *errstr, char *gen_err, int comma
 	
 	if (inet_pton(AF_INET, a[0], &new->start))
 	  {
+	    if (option == LOPT_DHCP_PREFIX)
+	      ret_err(_("bad dhcp-prefix"));
 	    new->next = daemon->dhcp;
 	    daemon->dhcp = new;
 	    new->end = new->start;
@@ -2575,8 +2583,17 @@ static int one_opt(int option, char *arg, char *errstr, char *gen_err, int comma
 	    new->flags |= CONTEXT_V6; 
 	    new->prefix = 64; /* default */
 	    new->end6 = new->start6;
-	    new->next = daemon->dhcp6;
-	    daemon->dhcp6 = new;
+	    if (option == LOPT_DHCP_PREFIX)
+	      {
+		new->flags |= CONTEXT_PREFIX; 
+		new->next = daemon->prefix_contexts;
+		daemon->prefix_contexts = new;
+	      }
+	    else
+	      {
+		new->next = daemon->dhcp6;
+		daemon->dhcp6 = new;
+	      }
 
 	    for (leasepos = 1; leasepos < k; leasepos++)
 	      {

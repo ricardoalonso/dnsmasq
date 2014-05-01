@@ -890,6 +890,14 @@ void log_context(int family, struct dhcp_context *context)
 #endif
 
 }
+ 
+#ifdef HAVE_PD
+void log_prefix(struct dhcp_context *context)
+{
+  inet_ntop(AF_INET6, &context->start6, daemon->addrbuff, ADDRSTRLEN); 
+  my_syslog(MS_DHCP | LOG_INFO, _("DHCPv6-PD with prefix %s/%d"), daemon->addrbuff, context->prefix);
+}
+#endif
 
 void log_relay(int family, struct dhcp_relay *relay)
 {
