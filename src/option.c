@@ -167,6 +167,7 @@ struct myoption {
 #define LOPT_IGNORE_CLID   358
 #define LOPT_SINGLE_PORT   359
 #define LOPT_SCRIPT_TIME   360
+#define LOPT_LOG_REST      361
  
 #ifdef HAVE_GETOPT_LONG
 static const struct option opts[] =  
@@ -266,6 +267,7 @@ static const struct myoption opts[] =
     { "dhcp-option-force", 1, 0, LOPT_FORCE },
     { "tftp-no-blocksize", 0, 0, LOPT_NOBLOCK },
     { "log-dhcp", 0, 0, LOPT_LOG_OPTS },
+	{ "log-rest-url", 1, 0, LOPT_LOG_REST},
     { "log-async", 2, 0, LOPT_MAX_LOGS },
     { "dhcp-circuitid", 1, 0, LOPT_CIRCUIT },
     { "dhcp-remoteid", 1, 0, LOPT_REMOTE },
@@ -458,6 +460,7 @@ static struct {
   { LOPT_TFTPPORTS, ARG_ONE, "<start>,<end>", gettext_noop("Ephemeral port range for use by TFTP transfers."), NULL },
   { LOPT_SINGLE_PORT, OPT_SINGLE_PORT, NULL, gettext_noop("Use only one port for TFTP server."), NULL },
   { LOPT_LOG_OPTS, OPT_LOG_OPTS, NULL, gettext_noop("Extra logging for DHCP."), NULL },
+  { LOPT_LOG_REST, ARG_ONE, "http://www.example.com:80/rest/log", gettext_noop("Address to send a POST request to log lease (e.g.: http://www.example.com:80/rest/log)."), NULL },
   { LOPT_MAX_LOGS, ARG_ONE, "[=<integer>]", gettext_noop("Enable async. logging; optionally set queue length."), NULL },
   { LOPT_REBIND, OPT_NO_REBIND, NULL, gettext_noop("Stop DNS rebinding. Filter private IP ranges when resolving."), NULL },
   { LOPT_LOC_REBND, OPT_LOCAL_REBIND, NULL, gettext_noop("Allow rebinding of 127.0.0.0/8, for RBL servers."), NULL },
@@ -2417,6 +2420,10 @@ static int one_opt(int option, char *arg, char *errstr, char *gen_err, int comma
     case 'u':  /* --user */
       daemon->username = opt_string_alloc(arg);
       break;
+
+	case LOPT_LOG_REST:
+	  daemon->log_rest_url = opt_string_alloc(arg);
+	  break;
       
     case 'g':  /* --group */
       daemon->groupname = opt_string_alloc(arg);

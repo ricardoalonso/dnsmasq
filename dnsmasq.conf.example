@@ -663,6 +663,9 @@
 # Log lots of extra information about DHCP transactions.
 #log-dhcp
 
+# Send log information using a POST request to the specified address
+#log-rest-url=http://www.example.com:80/rest/log/add 
+
 # Include another lot of configuration options.
 #conf-file=/etc/dnsmasq.more.conf
 #conf-dir=/etc/dnsmasq.d

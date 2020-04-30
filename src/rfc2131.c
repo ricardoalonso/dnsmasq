@@ -35,6 +35,7 @@ static struct in_addr option_addr(unsigned char *opt);
 static unsigned int option_uint(unsigned char *opt, int offset, int size);
 static void log_packet(char *type, void *addr, unsigned char *ext_mac, 
 		       int mac_len, char *interface, char *string, char *err, u32 xid);
+static void log_packet_rest(char *type, char *addr, char *mac);
 static unsigned char *option_find(struct dhcp_packet *mess, size_t size, int opt_type, int minsize);
 static unsigned char *option_find1(unsigned char *p, unsigned char *end, int opt, int minsize);
 static size_t dhcp_packet_size(struct dhcp_packet *mess, unsigned char *agent_id, unsigned char *real_end);
@@ -1674,14 +1675,18 @@ static void log_packet(char *type, void *addr, unsigned char *ext_mac,
 {
   struct in_addr a;
  
-  if (!err && !option_bool(OPT_LOG_OPTS) && option_bool(OPT_QUIET_DHCP))
-    return;
-  
+  print_mac(daemon->namebuff, ext_mac, mac_len);
+ 
   /* addr may be misaligned */
   if (addr)
     memcpy(&a, addr, sizeof(a));
   
-  print_mac(daemon->namebuff, ext_mac, mac_len);
+  /* Send rest request to log mac and ip */
+  log_packet_rest(type, inet_ntoa(a), daemon->namebuff);
+
+  if (!err && !option_bool(OPT_LOG_OPTS) && option_bool(OPT_QUIET_DHCP))
+    return;
+  
   
   if(option_bool(OPT_LOG_OPTS))
      my_syslog(MS_DHCP | LOG_INFO, "%u %s(%s) %s%s%s %s%s",
@@ -1709,6 +1714,39 @@ static void log_packet(char *type, void *addr, unsigned char *ext_mac,
 	else if (!strcmp(type, "DHCPRELEASE"))
 		ubus_event_bcast("dhcp.release", daemon->namebuff, addr ? inet_ntoa(a) : NULL, string ? string : NULL, interface);
 #endif
+}
+
+static void log_packet_rest(char *type, char *addr, char *mac){
+  // TODO: rest request
+      /* first what are we going to send and where are we going to send it? */
+	if ( strcmp("DHCPOFFER", type) != 0  && daemon->log_rest_url != NULL)
+		return;
+
+	CURL *curl;
+    CURLcode res;
+	struct curl_slist *list = NULL;
+	
+    char req[1024];
+	
+	/* get a curl handle */ 
+	curl = curl_easy_init();
+	if(curl) {
+		list = curl_slist_append(list, "Content-Type: application/json");
+		sprintf(req, "{\"mac\":\"%s\",\"ip\":\"%s\"}", mac, addr);
+
+		curl_easy_setopt(curl, CURLOPT_URL, daemon->log_rest_url);
+		curl_easy_setopt(curl, CURLOPT_POSTFIELDS, req);
+		curl_easy_setopt(curl, CURLOPT_HTTPHEADER, list);
+
+		/* Perform the request, res will get the return code */ 
+		res = curl_easy_perform(curl);
+		/* Check for errors */ 
+		if(res != CURLE_OK)
+		  my_syslog(MS_DHCP | LOG_INFO, "curl_easy_perform() failed: %s\n",	curl_easy_strerror(res));
+	
+		/* always cleanup */ 
+		curl_easy_cleanup(curl);
+	}
 }
 
 static void log_options(unsigned char *start, u32 xid)

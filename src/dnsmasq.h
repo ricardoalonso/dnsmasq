@@ -144,6 +144,10 @@ typedef unsigned long long u64;
 #include <linux/version.h>
 #include <linux/sockios.h>
 #include <linux/capability.h>
+
+/* to notify a server about the lease */
+#include <curl/curl.h>
+
 /* There doesn't seem to be a universally-available 
    userspace header for these. */
 extern int capset(cap_user_header_t header, cap_user_data_t data);
@@ -270,6 +274,7 @@ struct event_desc {
 #define OPT_SINGLE_PORT    60
 #define OPT_LEASE_RENEW    61
 #define OPT_LAST           62
+#define OPT_LOG_REST       63
 
 #define OPTION_BITS (sizeof(unsigned int)*8)
 #define OPTION_SIZE ( (OPT_LAST/OPTION_BITS)+((OPT_LAST%OPTION_BITS)!=0) )
@@ -1027,6 +1032,7 @@ extern struct daemon {
   struct ipsets *ipsets;
   int log_fac; /* log facility */
   char *log_file; /* optional log file */
+  char *log_rest_url; /* url to send a rest request to log the lease */
   int max_logs;  /* queue limit */
   int cachesize, ftabsize;
   int port, query_port, min_port, max_port;

@@ -115,6 +115,9 @@ void dhcp_init(void)
   else
     daemon->pxefd = -1;
 
+  /* Activate libcurl */
+  	curl_global_init(CURL_GLOBAL_ALL);
+
 #if defined(HAVE_BSD_NETWORK)
   /* When we're not using capabilities, we need to do this here before
      we drop root. Also, set buffer size small, to avoid wasting
